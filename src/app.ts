@@ -1,14 +1,27 @@
 import { INestApplication, Module } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import cookieParser from 'cookie-parser';
+import { ALERT_FEED, createAlertFeed } from './alerts/alert.feed';
+import { AlertsController } from './alerts/alerts.controller';
+import { RealtimeAuthController } from './alerts/realtime.auth';
+import { createSessionReader, SESSION_STORE } from './common/auth/session.reader';
+import { config } from './config';
 import { HttpExceptionFilter } from './common/http-exception.filter';
 import { HealthController } from './health.controller';
+import { Pipeline } from './pipeline';
 
 /** URL prefix shared by every HTTP route exposed by this service. */
 export const GLOBAL_PREFIX = 'api/notification';
 
 @Module({
-  controllers: [HealthController],
+  controllers: [HealthController, AlertsController, RealtimeAuthController],
+  providers: [
+    // The session store is shared by every guard in the module; it dials
+    // Redis lazily, so assembling the graph never touches the network.
+    { provide: SESSION_STORE, useFactory: () => createSessionReader(config.redisUrl) },
+    { provide: ALERT_FEED, useFactory: () => createAlertFeed(config) },
+    Pipeline,
+  ],
 })
 export class AppModule {}
 
@@ -32,9 +45,13 @@ export function configureHttp(app: INestApplication): void {
  *
  * The caller decides when to start listening, so this helper only
  * assembles the module graph and applies the shared HTTP pipeline.
+ * Shutdown hooks are enabled here (and only here) so a running service
+ * drains the pipeline through `onModuleDestroy`, while test applications
+ * stay in full control of their own lifecycle.
  */
 export async function createApp(): Promise<INestApplication> {
   const app = await NestFactory.create(AppModule);
   configureHttp(app);
+  app.enableShutdownHooks();
   return app;
 }

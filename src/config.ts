@@ -8,6 +8,17 @@ export interface ServiceConfig {
   port: number;
   /** Connection string of the log database that stores notification events. */
   databaseUrl: string;
+  /**
+   * Connection string of the domain database. The transactional outbox the
+   * poller drains lives there, next to the profile writes that create it.
+   */
+  databaseUrlMain: string;
+  /**
+   * Connection string of the log database under its own name. The generic
+   * `DATABASE_URL` name is accepted as a fallback so either environment
+   * works without extra wiring.
+   */
+  databaseUrlLog: string;
   /** Connection string of the cache/queue Redis instance. */
   redisUrl: string;
   /** Comma separated list of message broker endpoints. */
@@ -16,6 +27,8 @@ export interface ServiceConfig {
   centrifugoUrl: string;
   /** API key used to authenticate against the realtime push gateway. */
   centrifugoApiKey: string;
+  /** Deployment mode; jobs stay dormant while tests drive them directly. */
+  nodeEnv: string;
 }
 
 /** Parses a numeric environment value, falling back when it is absent or invalid. */
@@ -37,15 +50,32 @@ export function str(value: string | undefined, fallback: string): string {
 
 /** Builds the configuration object from the given environment map. */
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServiceConfig {
+  const databaseUrl = str(env.DATABASE_URL, '');
   return {
     port: num(env.PORT, 3003),
-    databaseUrl: str(env.DATABASE_URL, ''),
+    databaseUrl,
+    databaseUrlMain: str(env.DATABASE_URL_MAIN, ''),
+    databaseUrlLog: str(env.DATABASE_URL_LOG, databaseUrl),
     redisUrl: str(env.REDIS_URL, ''),
     brokerBrokers: str(env.BROKER_BROKERS, 'localhost:9092'),
     centrifugoUrl: str(env.CENTRIFUGO_URL, 'http://localhost:8000'),
     centrifugoApiKey: str(env.CENTRIFUGO_API_KEY, ''),
+    nodeEnv: str(env.NODE_ENV, 'development'),
   };
 }
 
 /** Process wide configuration snapshot resolved at import time. */
 export const config: ServiceConfig = loadConfig();
+
+/**
+ * Splits the comma separated broker list into endpoints.
+ *
+ * Empty entries (trailing commas, stray spaces) are dropped so a malformed
+ * value degrades to fewer endpoints instead of an unusable one.
+ */
+export function splitBrokers(raw: string): string[] {
+  return raw
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+}
