@@ -1,5 +1,6 @@
 import { Pool } from 'pg';
 import type { ServiceConfig } from '../config';
+import { logIdleClientErrors } from '../common/pg.pool-errors';
 import type { AlertLogRow, AlertProjection } from './alert.projection';
 import { projectAlertFromLogRow } from './alert.projection';
 
@@ -42,7 +43,10 @@ const SELECT_SQL = `
  * password changes.
  */
 export function createAlertFeed(config: ServiceConfig): AlertFeed {
-  const pool = new Pool({ connectionString: config.databaseUrlLog, max: 4 });
+  const pool = logIdleClientErrors(
+    new Pool({ connectionString: config.databaseUrlLog, max: 4 }),
+    'alert feed pool',
+  );
 
   return {
     async recent(since: Date | undefined): Promise<AlertProjection[]> {

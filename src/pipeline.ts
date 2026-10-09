@@ -3,6 +3,7 @@ import { Pool } from 'pg';
 import { ALERT_FEED, type AlertFeed } from './alerts/alert.feed';
 import { createCentrifugoAlertPublisher } from './alerts/centrifugo.publisher';
 import { config, splitBrokers } from './config';
+import { logIdleClientErrors } from './common/pg.pool-errors';
 import { createKafkaOutboxPublisher } from './outbox/kafka.publisher';
 import { OutboxPoller } from './outbox/outbox.poller';
 import { createKafkaEventStream } from './stream/kafka.event.stream';
@@ -37,10 +38,13 @@ interface OptionallyClosable {
 export class Pipeline implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(Pipeline.name);
 
-  private readonly mainPool = new Pool({
-    connectionString: config.databaseUrlMain,
-    max: 4,
-  });
+  private readonly mainPool = logIdleClientErrors(
+    new Pool({
+      connectionString: config.databaseUrlMain,
+      max: 4,
+    }),
+    'outbox pool',
+  );
   private readonly outboxPublisher = createKafkaOutboxPublisher({
     brokers: splitBrokers(config.brokerBrokers),
   });

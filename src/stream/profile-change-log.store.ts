@@ -1,5 +1,6 @@
 import { Pool } from 'pg';
 import type { ServiceConfig } from '../config';
+import { logIdleClientErrors } from '../common/pg.pool-errors';
 import type { ProfileChangedEvent } from './profile-changed.event';
 
 /** Write side of the log database the stream consumer owns. */
@@ -23,7 +24,10 @@ export interface ProfileChangeLogStore {
  * everything else keeps its already-redacted before/after snapshots.
  */
 export function createProfileChangeLogStore(config: ServiceConfig): ProfileChangeLogStore {
-  const pool = new Pool({ connectionString: config.databaseUrlLog, max: 4 });
+  const pool = logIdleClientErrors(
+    new Pool({ connectionString: config.databaseUrlLog, max: 4 }),
+    'profile change log pool',
+  );
 
   return {
     async upsert(event: ProfileChangedEvent): Promise<void> {
